@@ -91,6 +91,63 @@ cd frontend && npm run dev
 
 ---
 
+## Getting Started
+
+### Fresh Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/VirtualKenji/trading-journal.git
+   cd trading-journal
+   ```
+
+2. **Install all dependencies**
+   ```bash
+   npm run install:all
+   ```
+
+3. **Set up environment variables**
+   ```bash
+   cd backend
+   cp .env.example .env
+   # Edit .env and add your ANTHROPIC_API_KEY
+   ```
+
+4. **Initialize the database**
+   ```bash
+   npm run db:init
+   ```
+
+5. **Start the backend server** (Terminal 1)
+   ```bash
+   npm run backend
+   # Server runs on http://localhost:3001
+   ```
+
+6. **Start the frontend** (Terminal 2)
+   ```bash
+   npm run frontend
+   # Frontend runs on http://localhost:3000
+   ```
+
+7. **Verify setup**
+   - Open browser to http://localhost:3000
+   - Should see "Trading Journal MVP" page
+   - Green box shows backend health check (connected database, table count)
+
+### Current Phase Status
+
+**✅ Phase 1 Complete: Foundation**
+- Backend server running (Express + SQLite)
+- Frontend running (React + Vite)
+- Database initialized (8 tables)
+- API communication working
+
+**🚧 Next Phase: Core Features**
+- Coming soon: Setup wizard, trade logging, stats calculation
+
+---
+
 ## Project Structure
 
 ```
