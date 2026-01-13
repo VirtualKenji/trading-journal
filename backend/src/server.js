@@ -18,7 +18,9 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 const healthRouter = require('./routes/health');
+const configRouter = require('./routes/config');
 app.use('/api', healthRouter);
+app.use('/api', configRouter);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -41,6 +43,13 @@ app.use((err, req, res, next) => {
 
 // Initialize database and start server
 initializeDatabase();
+
+// Initialize default configuration
+const configService = require('./services/configService');
+const initialized = configService.initializeDefaults();
+if (initialized) {
+  logger.info('✓ Default configuration initialized');
+}
 
 app.listen(PORT, () => {
   logger.info(`Server running on http://localhost:${PORT}`);
