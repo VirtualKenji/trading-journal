@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -19,8 +19,17 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // Routes
 const healthRouter = require('./routes/health');
 const configRouter = require('./routes/config');
+const tradesRouter = require('./routes/trades');
+const tradingDaysRouter = require('./routes/trading-days');
+const statsRouter = require('./routes/stats');
+const exportRouter = require('./routes/export');
+
 app.use('/api', healthRouter);
 app.use('/api', configRouter);
+app.use('/api', tradesRouter);
+app.use('/api', tradingDaysRouter);
+app.use('/api', statsRouter);
+app.use('/api', exportRouter);
 
 // Root endpoint
 app.get('/', (req, res) => {

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "dev:sandbox": "cross-env DOTENV_CONFIG_PATH=.env.sandbox nodemon src/server.js",
     "db:init": "node src/db/database.js"
   },
   "keywords": [],
@@ -21,6 +22,7 @@
     "multer": "^2.0.2"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "nodemon": "^3.1.11"
   }
 }
