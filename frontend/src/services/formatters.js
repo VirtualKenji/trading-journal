@@ -39,7 +39,9 @@ export function formatDate(dateStr) {
  * Format a single trade as markdown
  */
 export function formatTrade(trade) {
-  const direction = trade.direction === 'long' ? '🟢 Long' : '🔴 Short';
+  const direction = trade.direction === 'long'
+    ? '<span class="text-long">Long</span>'
+    : '<span class="text-short">Short</span>';
   const pnl = trade.pnl != null
     ? `${formatCurrency(trade.pnl, true)} (${formatPercent(trade.pnl_percentage, true)})`
     : 'Open';
@@ -75,7 +77,9 @@ export function formatOpenTrades(trades) {
   md += "|---|-------|-----|-------|------|------|\n";
 
   trades.forEach((trade, i) => {
-    const dir = trade.direction === 'long' ? '🟢' : '🔴';
+    const dir = trade.direction === 'long'
+      ? '<span class="text-long">L</span>'
+      : '<span class="text-short">S</span>';
     const pnl = trade.unrealized_pnl != null
       ? formatCurrency(trade.unrealized_pnl, true)
       : '-';
@@ -103,13 +107,19 @@ export function formatTradeHistory(trades, limit = 10) {
   md += "|---|-------|-----|-------|------|-----|------|\n";
 
   shown.forEach(trade => {
-    const dir = trade.direction === 'long' ? '🟢' : '🔴';
+    const dir = trade.direction === 'long'
+      ? '<span class="text-long">L</span>'
+      : '<span class="text-short">S</span>';
     const pnl = trade.pnl != null
       ? formatCurrency(trade.pnl, true)
       : '-';
-    const pnlClass = trade.pnl > 0 ? '✅' : trade.pnl < 0 ? '❌' : '';
+    const outcome = trade.pnl > 0
+      ? '<span class="text-win">W</span>'
+      : trade.pnl < 0
+        ? '<span class="text-loss">L</span>'
+        : '';
 
-    md += `| ${trade.id} | ${trade.asset} | ${dir} | ${formatCurrency(trade.entry_price)} | ${formatCurrency(trade.exit_price)} | ${pnl} ${pnlClass} | ${formatDate(trade.exit_time || trade.entry_time)} |\n`;
+    md += `| ${trade.id} | ${trade.asset} | ${dir} | ${formatCurrency(trade.entry_price)} | ${formatCurrency(trade.exit_price)} | ${pnl} ${outcome} | ${formatDate(trade.exit_time || trade.entry_time)} |\n`;
   });
 
   return md;
@@ -157,7 +167,7 @@ export function formatLesson(lesson) {
     archived: '📦'
   }[lesson.status] || '';
 
-  let md = `### ${status} ${lesson.title || 'Lesson'}\n\n`;
+  let md = `### ${status} <span class="text-lesson">${lesson.title || 'Lesson'}</span>\n\n`;
   md += `${lesson.content}\n\n`;
 
   if (lesson.category_name) {
@@ -216,7 +226,11 @@ export function formatSetups(setups) {
   setups.forEach((setup, i) => {
     // Handle both string arrays and object arrays
     const name = typeof setup === 'string' ? setup : setup.name;
-    md += `${i + 1}. ${name}\n`;
+    const colorClass = getSetupColorClass(name);
+    const styledName = colorClass
+      ? `<span class="${colorClass}">${name}</span>`
+      : name;
+    md += `${i + 1}. ${styledName}\n`;
   });
 
   return md;
@@ -237,6 +251,17 @@ function expandAbbreviations(text) {
 }
 
 /**
+ * Get color class for setup based on direction in name
+ */
+function getSetupColorClass(name) {
+  if (!name) return '';
+  const lowerName = name.toLowerCase();
+  if (lowerName.includes('long')) return 'text-long';
+  if (lowerName.includes('short')) return 'text-short';
+  return '';
+}
+
+/**
  * Format daily outlook as markdown
  */
 export function formatOutlook(data) {
@@ -250,8 +275,12 @@ export function formatOutlook(data) {
   let md = `## Daily Outlook (${date})\n\n`;
 
   // Bias
-  const biasEmoji = outlook.bias === 'bullish' ? '🟢' : outlook.bias === 'bearish' ? '🔴' : '⚪';
-  md += `**Bias:** ${biasEmoji} ${outlook.bias?.toUpperCase() || 'Not set'}`;
+  const biasDisplay = outlook.bias === 'bullish'
+    ? '<span class="text-long">BULLISH</span>'
+    : outlook.bias === 'bearish'
+      ? '<span class="text-short">BEARISH</span>'
+      : 'Not set';
+  md += `**Bias:** ${biasDisplay}`;
   if (outlook.htf_bias) {
     md += ` (HTF: ${outlook.htf_bias})`;
   }
@@ -278,13 +307,17 @@ export function formatOutlook(data) {
     md += `### Planned Setups\n`;
     outlook.setups.forEach((setup, i) => {
       const setupName = expandAbbreviations(setup.name);
-      md += `${i + 1}. **${setupName}**`;
-      if (setup.location) md += ` @ ${setup.location}`;
+      const colorClass = getSetupColorClass(setup.name);
+      const styledName = colorClass
+        ? `<span class="${colorClass}">${setupName}</span>`
+        : setupName;
+      md += `${i + 1}. **${styledName}**`;
+      if (setup.location) md += ` @ <span class="text-location">${setup.location}</span>`;
       if (setup.price) md += ` (${formatCurrency(setup.price)})`;
       if (setup.price_range) md += ` (${setup.price_range})`;
       md += '\n';
-      if (setup.pa_trigger) md += `   - PA: ${expandAbbreviations(setup.pa_trigger)}\n`;
-      if (setup.flow_trigger) md += `   - Flow: ${expandAbbreviations(setup.flow_trigger)}\n`;
+      if (setup.pa_trigger) md += `   - PA: <span class="text-trigger">${expandAbbreviations(setup.pa_trigger)}</span>\n`;
+      if (setup.flow_trigger) md += `   - Flow: <span class="text-trigger">${expandAbbreviations(setup.flow_trigger)}</span>\n`;
       if (setup.size) md += `   - Size: ${setup.size}\n`;
     });
     md += '\n';
@@ -318,7 +351,9 @@ export function formatOutlook(data) {
  * Format trade confirmation message
  */
 export function formatTradeConfirmation(trade, action = 'opened') {
-  const direction = trade.direction === 'long' ? '🟢 Long' : '🔴 Short';
+  const direction = trade.direction === 'long'
+    ? '<span class="text-long">Long</span>'
+    : '<span class="text-short">Short</span>';
 
   if (action === 'opened') {
     return `**Trade Opened** ${direction}\n\n` +
@@ -331,8 +366,10 @@ export function formatTradeConfirmation(trade, action = 'opened') {
   }
 
   if (action === 'closed') {
-    const pnlColor = trade.pnl >= 0 ? '🟢' : '🔴';
-    return `**Trade Closed** ${pnlColor}\n\n` +
+    const pnlIndicator = trade.pnl >= 0
+      ? '<span class="text-win">WIN</span>'
+      : '<span class="text-loss">LOSS</span>';
+    return `**Trade Closed** ${pnlIndicator}\n\n` +
       `| | |\n|---|---|\n` +
       `| Asset | **${trade.asset}** |\n` +
       `| Exit | ${formatCurrency(trade.exit_price)} |\n` +

@@ -367,7 +367,9 @@ router.put('/trades/:id', (req, res) => {
     const allowedFields = [
       'asset', 'direction', 'entry_price', 'exit_price', 'position_size',
       'collateral', 'leverage', 'liquidation_price', 'setup', 'location', 'trigger',
-      'initial_emotion', 'planned_in_outlook'
+      'initial_emotion', 'planned_in_outlook', 'notes', 'session',
+      'pnl', 'pnl_percentage', 'outcome', 'status', 'opened_at', 'closed_at',
+      'trade_number', 'entry_trigger', 'emotional_trigger', 'is_test'
     ];
 
     const setClauses = [];

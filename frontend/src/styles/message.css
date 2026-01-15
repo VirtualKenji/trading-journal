@@ -156,3 +156,12 @@
   border-top: 1px solid #444;
   margin: 1em 0;
 }
+
+/* Trading Color Scheme */
+.text-long { color: #10b981; font-weight: 600; }
+.text-short { color: #9f1239; font-weight: 600; }
+.text-location { color: #06b6d4; }
+.text-trigger { color: #8b5cf6; }
+.text-win { color: #fbbf24; font-weight: 600; }
+.text-loss { color: #ef4444; font-weight: 600; }
+.text-lesson { color: #f97316; }

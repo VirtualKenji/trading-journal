@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import '../styles/message.css';
 
 export function Message({ message }) {
@@ -16,6 +17,7 @@ export function Message({ message }) {
       <div className="message-content">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw]}
           components={{
             // Custom table styling
             table: ({ children }) => (
