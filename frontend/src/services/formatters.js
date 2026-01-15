@@ -212,11 +212,11 @@ export function formatSetups(setups) {
   }
 
   let md = `## Available Setups\n\n`;
-  md += "| Name | Description |\n";
-  md += "|------|-------------|\n";
 
-  setups.forEach(setup => {
-    md += `| ${setup.name} | ${setup.description || '-'} |\n`;
+  setups.forEach((setup, i) => {
+    // Handle both string arrays and object arrays
+    const name = typeof setup === 'string' ? setup : setup.name;
+    md += `${i + 1}. ${name}\n`;
   });
 
   return md;

@@ -25,6 +25,7 @@ const statsRouter = require('./routes/stats');
 const exportRouter = require('./routes/export');
 const lessonsRouter = require('./routes/lessons');
 const screenshotsRouter = require('./routes/screenshots');
+const chatRouter = require('./routes/chat');
 
 app.use('/api', healthRouter);
 app.use('/api', configRouter);
@@ -34,6 +35,7 @@ app.use('/api', statsRouter);
 app.use('/api', exportRouter);
 app.use('/api', lessonsRouter);
 app.use('/api', screenshotsRouter);
+app.use('/api', chatRouter);
 
 // Root endpoint
 app.get('/', (req, res) => {

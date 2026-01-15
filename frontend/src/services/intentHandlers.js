@@ -1,9 +1,30 @@
 // Intent handlers - connect parsed intents to backend APIs
-import { parseIntent, INTENTS } from './intentParser';
 import * as fmt from './formatters';
 
 // Use relative path to leverage Vite proxy
 const API_BASE = '/api';
+
+// Store last suggestions for numbered selection
+let lastSuggestions = [];
+
+// Intent constants (matching backend)
+const INTENTS = {
+  OPEN_TRADE: 'open_trade',
+  CLOSE_TRADE: 'close_trade',
+  UPDATE_TRADE: 'update_trade',
+  SHOW_OPEN_TRADES: 'show_open_trades',
+  SHOW_TRADE_HISTORY: 'show_trade_history',
+  SHOW_STATS: 'show_stats',
+  SHOW_TRADE: 'show_trade',
+  ADD_LESSON: 'add_lesson',
+  SHOW_LESSONS: 'show_lessons',
+  SEARCH_LESSONS: 'search_lessons',
+  ANALYZE_SCREENSHOT: 'analyze_screenshot',
+  SHOW_SETUPS: 'show_setups',
+  SHOW_OUTLOOK: 'show_outlook',
+  LLM_QUERY: 'llm_query',
+  UNKNOWN: 'unknown'
+};
 
 /**
  * Make API request with error handling
@@ -213,7 +234,7 @@ async function handleSearchLessons(data) {
  */
 async function handleShowSetups() {
   const result = await api('/config/setups');
-  return fmt.formatSetups(result.data);
+  return fmt.formatSetups(result.data.setups);
 }
 
 /**
@@ -250,40 +271,103 @@ async function handleAnalyzeScreenshot(imageFile) {
 }
 
 /**
- * Handle LLM_QUERY intent (fallback)
+ * Handle LLM_QUERY intent (fallback) - be helpful and suggest options
  */
 async function handleLLMQuery(data) {
-  // For now, return a helpful message
-  // This will be connected to the backend LLM endpoint later
-  return `I understand you're asking: "${data.query}"\n\n` +
-    `Complex analysis queries will be available soon. For now, try:\n` +
-    `- "show my open trades"\n` +
-    `- "what's my win rate?"\n` +
-    `- "open BTC long at 97500"\n` +
-    `- "lesson: [your insight]"`;
+  const query = (data.query || '').toLowerCase();
+
+  // Try to understand what category they might be asking about
+  let suggestions = [];
+  let context = '';
+
+  // Check for trade-related keywords
+  if (/\b(trade|position|entry|exit|buy|sell|long|short)\b/.test(query)) {
+    context = "It sounds like you're asking about trades.";
+    suggestions = [
+      { cmd: 'show open trades', desc: 'see your current positions' },
+      { cmd: 'trade history', desc: 'see your past trades' },
+      { cmd: 'open BTC long at 97500', desc: 'enter a new trade' },
+      { cmd: 'close T1 at 98000', desc: 'close an existing trade' }
+    ];
+  }
+  // Check for performance/stats keywords
+  else if (/\b(performance|stats|win|loss|profit|pnl|how.*(doing|am i))\b/.test(query)) {
+    context = "It sounds like you want to check your performance.";
+    suggestions = [
+      { cmd: 'show stats', desc: 'see overall statistics' },
+      { cmd: 'win rate', desc: 'check your win rate' },
+      { cmd: 'trade history', desc: 'review past trades' }
+    ];
+  }
+  // Check for planning/outlook keywords
+  else if (/\b(plan|outlook|today|tomorrow|bias|level|setup)\b/.test(query)) {
+    context = "It sounds like you're asking about your trading plan.";
+    suggestions = [
+      { cmd: 'outlook', desc: "see today's trading plan" },
+      { cmd: 'key levels', desc: 'view important price levels' },
+      { cmd: 'show setups', desc: 'see available setup types' }
+    ];
+  }
+  // Check for lesson/learning keywords
+  else if (/\b(lesson|learn|remember|note|insight)\b/.test(query)) {
+    context = "It sounds like you want to work with lessons.";
+    suggestions = [
+      { cmd: 'show lessons', desc: 'see saved lessons' },
+      { cmd: 'lesson: [your insight]', desc: 'save a new lesson' },
+      { cmd: 'lessons about FOMO', desc: 'search for specific lessons' }
+    ];
+  }
+  // Generic helpful response
+  else {
+    context = "I'm not sure what you're looking for, but I can help with:";
+    suggestions = [
+      { cmd: 'open trades', desc: 'see current positions' },
+      { cmd: 'outlook', desc: "today's trading plan" },
+      { cmd: 'stats', desc: 'your performance' },
+      { cmd: 'show lessons', desc: 'see saved lessons' }
+    ];
+  }
+
+  // Store suggestions for numbered selection
+  lastSuggestions = suggestions.map(s => s.cmd);
+
+  let response = `${context}\n\nDid you mean one of these?\n`;
+  suggestions.forEach((s, i) => {
+    response += `**${i + 1}.** "${s.cmd}" - ${s.desc}\n`;
+  });
+  response += `\nType a number (1-${suggestions.length}) or rephrase your question!`;
+
+  return response;
 }
 
 /**
- * Handle unknown intent
+ * Handle unknown intent - same as LLM query
  */
-function handleUnknown() {
-  return `I'm not sure what you mean. Try:\n\n` +
-    `**Trades:**\n` +
-    `- "open BTC long at 97500"\n` +
-    `- "close T1 at 98000"\n` +
-    `- "show my open trades"\n` +
-    `- "show trade history"\n\n` +
-    `**Daily:**\n` +
-    `- "what's my outlook for today?"\n` +
-    `- "show key levels"\n\n` +
-    `**Stats:**\n` +
-    `- "what's my win rate?"\n` +
-    `- "show my stats"\n\n` +
-    `**Lessons:**\n` +
-    `- "lesson: don't chase price"\n` +
-    `- "show my lessons"\n\n` +
-    `**Screenshots:**\n` +
-    `- Paste a screenshot to extract trade data`;
+function handleUnknown(text = '') {
+  return handleLLMQuery({ query: text });
+}
+
+/**
+ * Parse intent using LLM backend
+ */
+async function parseIntentLLM(message, hasImage) {
+  try {
+    const response = await fetch(`${API_BASE}/chat/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, hasImage })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to parse intent');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('LLM parse error:', error);
+    // Return fallback
+    return { intent: 'llm_query', data: { query: message }, confidence: 0.3 };
+  }
 }
 
 /**
@@ -291,8 +375,24 @@ function handleUnknown() {
  */
 export async function processMessage(text, imageFile = null) {
   try {
+    // Check if user typed a number to select from suggestions
+    const trimmed = (text || '').trim();
+    if (/^[1-4]$/.test(trimmed) && lastSuggestions.length > 0) {
+      const index = parseInt(trimmed) - 1;
+      if (index < lastSuggestions.length) {
+        const selectedCmd = lastSuggestions[index];
+        console.log(`User selected option ${trimmed}: "${selectedCmd}"`);
+        // Clear suggestions and process the selected command
+        lastSuggestions = [];
+        return processMessage(selectedCmd, imageFile);
+      }
+    }
+
+    // Clear suggestions on new query (not a number selection)
+    lastSuggestions = [];
+
     const hasImage = !!imageFile;
-    const { intent, data, confidence } = parseIntent(text, hasImage);
+    const { intent, data, confidence } = await parseIntentLLM(text, hasImage);
 
     console.log('Parsed intent:', { intent, data, confidence });
 
@@ -339,7 +439,7 @@ export async function processMessage(text, imageFile = null) {
 
       case INTENTS.UNKNOWN:
       default:
-        return handleUnknown();
+        return handleUnknown(text);
     }
   } catch (error) {
     console.error('Intent handler error:', error);
