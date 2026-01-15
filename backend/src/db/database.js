@@ -58,7 +58,124 @@ function runMigrations() {
     console.log('  ✓ lesson categories seeded');
   }
 
+  // Migration: Move outlook_data and review_data to separate tables
+  migrateOutlooksAndReviews();
+
   console.log('✓ Migrations complete');
+}
+
+/**
+ * Migrate outlook_data and review_data from trading_days to separate tables
+ */
+function migrateOutlooksAndReviews() {
+  // Check if daily_outlooks table exists (it should after schema runs)
+  const tableExists = db.prepare(`
+    SELECT name FROM sqlite_master WHERE type='table' AND name='daily_outlooks'
+  `).get();
+
+  if (!tableExists) {
+    console.log('  daily_outlooks table not found, skipping migration');
+    return;
+  }
+
+  // Get trading_days with outlook_data that haven't been migrated
+  const daysWithOutlook = db.prepare(`
+    SELECT td.id, td.date, td.outlook_data
+    FROM trading_days td
+    WHERE td.outlook_data IS NOT NULL
+    AND td.has_outlook = 1
+    AND NOT EXISTS (SELECT 1 FROM daily_outlooks do WHERE do.trading_day_id = td.id)
+  `).all();
+
+  if (daysWithOutlook.length > 0) {
+    console.log(`  Migrating ${daysWithOutlook.length} outlook(s) to daily_outlooks table...`);
+
+    const insertOutlook = db.prepare(`
+      INSERT INTO daily_outlooks (
+        trading_day_id, bias, bias_reasoning, htf_bias, key_levels, setups,
+        no_trade_zone, contingency, invalidation, bull_arguments, bear_arguments,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const day of daysWithOutlook) {
+      try {
+        const data = JSON.parse(day.outlook_data);
+        const now = new Date().toISOString();
+        insertOutlook.run(
+          day.id,
+          data.bias || 'unknown',
+          data.bias_reasoning || null,
+          data.htf_bias || null,
+          data.key_levels ? JSON.stringify(data.key_levels) : null,
+          data.setups ? JSON.stringify(data.setups) : null,
+          data.no_trade_zone ? JSON.stringify(data.no_trade_zone) : null,
+          data.contingency ? JSON.stringify(data.contingency) : null,
+          data.invalidation ? JSON.stringify(data.invalidation) : null,
+          data.bull_arguments ? JSON.stringify(data.bull_arguments) : null,
+          data.bear_arguments ? JSON.stringify(data.bear_arguments) : null,
+          now,
+          now
+        );
+      } catch (e) {
+        console.log(`  Warning: Could not migrate outlook for ${day.date}: ${e.message}`);
+      }
+    }
+    console.log(`  ✓ Migrated ${daysWithOutlook.length} outlook(s)`);
+  }
+
+  // Get trading_days with review_data that haven't been migrated
+  const daysWithReview = db.prepare(`
+    SELECT td.id, td.date, td.review_data
+    FROM trading_days td
+    WHERE td.review_data IS NOT NULL
+    AND td.has_review = 1
+    AND NOT EXISTS (SELECT 1 FROM daily_reviews dr WHERE dr.trading_day_id = td.id)
+  `).all();
+
+  if (daysWithReview.length > 0) {
+    console.log(`  Migrating ${daysWithReview.length} review(s) to daily_reviews table...`);
+
+    const insertReview = db.prepare(`
+      INSERT INTO daily_reviews (
+        trading_day_id, outlook_grade, execution_grade, emotional_grade,
+        bias_correct, reflection, lessons, hindsight, action_items,
+        trades_won, trades_lost, total_pnl, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const day of daysWithReview) {
+      try {
+        const data = JSON.parse(day.review_data);
+        const now = new Date().toISOString();
+
+        // Handle various field name variations
+        const outlookGrade = data.outlook_grade || data.prediction_grade || data.grades?.analysis || null;
+        const executionGrade = data.execution_grade || data.grades?.execution || null;
+        const emotionalGrade = data.emotional_grade || data.grades?.emotion || null;
+
+        insertReview.run(
+          day.id,
+          outlookGrade,
+          executionGrade,
+          emotionalGrade,
+          data.bias_correct !== undefined ? (data.bias_correct ? 1 : 0) : null,
+          data.reflection || null,
+          data.lessons ? JSON.stringify(data.lessons) : null,
+          data.hindsight ? JSON.stringify(data.hindsight) : null,
+          data.action_items ? JSON.stringify(data.action_items) : null,
+          data.trades_won || data.summary?.wins || 0,
+          data.trades_lost || data.summary?.losses || 0,
+          data.total_pnl || data.summary?.total_pnl || null,
+          now,
+          now
+        );
+      } catch (e) {
+        console.log(`  Warning: Could not migrate review for ${day.date}: ${e.message}`);
+      }
+    }
+    console.log(`  ✓ Migrated ${daysWithReview.length} review(s)`);
+  }
 }
 
 /**

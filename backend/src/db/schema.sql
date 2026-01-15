@@ -10,7 +10,48 @@ CREATE TABLE IF NOT EXISTS trading_days (
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table 2: trades
+-- Table 2: daily_outlooks (predictive - user's pre-market plan)
+CREATE TABLE IF NOT EXISTS daily_outlooks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trading_day_id INTEGER NOT NULL,
+  bias TEXT NOT NULL,
+  bias_reasoning TEXT,
+  htf_bias TEXT,
+  key_levels TEXT,           -- JSON
+  setups TEXT,               -- JSON array
+  no_trade_zone TEXT,        -- JSON
+  contingency TEXT,          -- JSON
+  invalidation TEXT,         -- JSON
+  bull_arguments TEXT,       -- JSON array
+  bear_arguments TEXT,       -- JSON array
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trading_day_id) REFERENCES trading_days(id),
+  UNIQUE(trading_day_id)
+);
+
+-- Table 3: daily_reviews (reflective - post-market grading)
+CREATE TABLE IF NOT EXISTS daily_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trading_day_id INTEGER NOT NULL,
+  outlook_grade INTEGER,          -- 1-10
+  execution_grade INTEGER,        -- 1-10
+  emotional_grade INTEGER,        -- 1-10
+  bias_correct BOOLEAN,
+  reflection TEXT,
+  lessons TEXT,                   -- JSON array
+  hindsight TEXT,                 -- JSON array
+  action_items TEXT,              -- JSON array
+  trades_won INTEGER DEFAULT 0,
+  trades_lost INTEGER DEFAULT 0,
+  total_pnl REAL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trading_day_id) REFERENCES trading_days(id),
+  UNIQUE(trading_day_id)
+);
+
+-- Table 4: trades
 CREATE TABLE IF NOT EXISTS trades (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   trade_number TEXT NOT NULL UNIQUE,
@@ -157,3 +198,5 @@ CREATE INDEX IF NOT EXISTS idx_lessons_category ON lessons(category_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
 CREATE INDEX IF NOT EXISTS idx_lesson_applications_lesson ON lesson_applications(lesson_id);
 CREATE INDEX IF NOT EXISTS idx_lesson_applications_trade ON lesson_applications(trade_id);
+CREATE INDEX IF NOT EXISTS idx_daily_outlooks_trading_day ON daily_outlooks(trading_day_id);
+CREATE INDEX IF NOT EXISTS idx_daily_reviews_trading_day ON daily_reviews(trading_day_id);

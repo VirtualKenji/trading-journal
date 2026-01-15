@@ -12,6 +12,65 @@ function getTodayDate() {
 }
 
 /**
+ * Fetch outlook from daily_outlooks table
+ */
+function getOutlookForDay(db, tradingDayId) {
+  if (!tradingDayId) return null;
+
+  const outlook = db.prepare(`
+    SELECT * FROM daily_outlooks WHERE trading_day_id = ?
+  `).get(tradingDayId);
+
+  if (!outlook) return null;
+
+  return {
+    id: outlook.id,
+    bias: outlook.bias,
+    bias_reasoning: outlook.bias_reasoning,
+    htf_bias: outlook.htf_bias,
+    key_levels: outlook.key_levels ? JSON.parse(outlook.key_levels) : null,
+    setups: outlook.setups ? JSON.parse(outlook.setups) : null,
+    no_trade_zone: outlook.no_trade_zone ? JSON.parse(outlook.no_trade_zone) : null,
+    contingency: outlook.contingency ? JSON.parse(outlook.contingency) : null,
+    invalidation: outlook.invalidation ? JSON.parse(outlook.invalidation) : null,
+    bull_arguments: outlook.bull_arguments ? JSON.parse(outlook.bull_arguments) : null,
+    bear_arguments: outlook.bear_arguments ? JSON.parse(outlook.bear_arguments) : null,
+    created_at: outlook.created_at,
+    updated_at: outlook.updated_at
+  };
+}
+
+/**
+ * Fetch review from daily_reviews table
+ */
+function getReviewForDay(db, tradingDayId) {
+  if (!tradingDayId) return null;
+
+  const review = db.prepare(`
+    SELECT * FROM daily_reviews WHERE trading_day_id = ?
+  `).get(tradingDayId);
+
+  if (!review) return null;
+
+  return {
+    id: review.id,
+    outlook_grade: review.outlook_grade,
+    execution_grade: review.execution_grade,
+    emotional_grade: review.emotional_grade,
+    bias_correct: review.bias_correct,
+    reflection: review.reflection,
+    lessons: review.lessons ? JSON.parse(review.lessons) : null,
+    hindsight: review.hindsight ? JSON.parse(review.hindsight) : null,
+    action_items: review.action_items ? JSON.parse(review.action_items) : null,
+    trades_won: review.trades_won,
+    trades_lost: review.trades_lost,
+    total_pnl: review.total_pnl,
+    created_at: review.created_at,
+    updated_at: review.updated_at
+  };
+}
+
+/**
  * GET /api/trading-days
  * List all trading days with optional filters
  */
@@ -49,11 +108,11 @@ router.get('/trading-days', (req, res) => {
       LIMIT ? OFFSET ?
     `).all(...params);
 
-    // Parse JSON fields
+    // Fetch outlook and review from separate tables
     const parsedDays = days.map(day => ({
       ...day,
-      outlook_data: day.outlook_data ? JSON.parse(day.outlook_data) : null,
-      review_data: day.review_data ? JSON.parse(day.review_data) : null
+      outlook_data: getOutlookForDay(db, day.id),
+      review_data: getReviewForDay(db, day.id)
     }));
 
     res.json({
@@ -96,8 +155,8 @@ router.get('/trading-days/latest', (req, res) => {
       success: true,
       data: {
         ...day,
-        outlook_data: day.outlook_data ? JSON.parse(day.outlook_data) : null,
-        review_data: day.review_data ? JSON.parse(day.review_data) : null
+        outlook_data: getOutlookForDay(db, day.id),
+        review_data: getReviewForDay(db, day.id)
       }
     });
   } catch (error) {
@@ -147,8 +206,8 @@ router.get('/trading-days/today', (req, res) => {
       success: true,
       data: {
         ...day,
-        outlook_data: day.outlook_data ? JSON.parse(day.outlook_data) : null,
-        review_data: day.review_data ? JSON.parse(day.review_data) : null,
+        outlook_data: getOutlookForDay(db, day.id),
+        review_data: getReviewForDay(db, day.id),
         trades
       }
     });
@@ -207,8 +266,8 @@ router.get('/trading-days/:date', (req, res) => {
       success: true,
       data: {
         ...day,
-        outlook_data: day.outlook_data ? JSON.parse(day.outlook_data) : null,
-        review_data: day.review_data ? JSON.parse(day.review_data) : null,
+        outlook_data: getOutlookForDay(db, day.id),
+        review_data: getReviewForDay(db, day.id),
         trades
       }
     });
@@ -224,7 +283,7 @@ router.get('/trading-days/:date', (req, res) => {
 
 /**
  * POST /api/trading-days/:date/outlook
- * Save daily outlook for a specific date
+ * Save daily outlook for a specific date (writes to daily_outlooks table)
  */
 router.post('/trading-days/:date/outlook', (req, res) => {
   try {
@@ -249,29 +308,77 @@ router.post('/trading-days/:date/outlook', (req, res) => {
       });
     }
 
-    // Check if day exists
-    let day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
-    const outlookJson = JSON.stringify(outlookData);
     const now = new Date().toISOString();
 
-    if (day) {
-      // Update existing day
+    // Ensure trading_day exists
+    let day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
+    if (!day) {
       db.prepare(`
-        UPDATE trading_days SET
-          has_outlook = 1,
-          outlook_data = ?,
-          updated_at = ?
-        WHERE date = ?
-      `).run(outlookJson, now, date);
+        INSERT INTO trading_days (date, has_outlook, created_at, updated_at)
+        VALUES (?, 1, ?, ?)
+      `).run(date, now, now);
+      day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
     } else {
-      // Create new day
       db.prepare(`
-        INSERT INTO trading_days (date, has_outlook, outlook_data, created_at, updated_at)
-        VALUES (?, 1, ?, ?, ?)
-      `).run(date, outlookJson, now, now);
+        UPDATE trading_days SET has_outlook = 1, updated_at = ? WHERE date = ?
+      `).run(now, date);
     }
 
-    // Fetch updated day
+    // Check if outlook already exists for this day
+    const existingOutlook = db.prepare(`
+      SELECT id FROM daily_outlooks WHERE trading_day_id = ?
+    `).get(day.id);
+
+    if (existingOutlook) {
+      // Update existing outlook
+      db.prepare(`
+        UPDATE daily_outlooks SET
+          bias = ?, bias_reasoning = ?, htf_bias = ?,
+          key_levels = ?, setups = ?, no_trade_zone = ?,
+          contingency = ?, invalidation = ?,
+          bull_arguments = ?, bear_arguments = ?,
+          updated_at = ?
+        WHERE trading_day_id = ?
+      `).run(
+        outlookData.bias,
+        outlookData.bias_reasoning || null,
+        outlookData.htf_bias || null,
+        outlookData.key_levels ? JSON.stringify(outlookData.key_levels) : null,
+        outlookData.setups ? JSON.stringify(outlookData.setups) : null,
+        outlookData.no_trade_zone ? JSON.stringify(outlookData.no_trade_zone) : null,
+        outlookData.contingency ? JSON.stringify(outlookData.contingency) : null,
+        outlookData.invalidation ? JSON.stringify(outlookData.invalidation) : null,
+        outlookData.bull_arguments ? JSON.stringify(outlookData.bull_arguments) : null,
+        outlookData.bear_arguments ? JSON.stringify(outlookData.bear_arguments) : null,
+        now,
+        day.id
+      );
+    } else {
+      // Insert new outlook
+      db.prepare(`
+        INSERT INTO daily_outlooks (
+          trading_day_id, bias, bias_reasoning, htf_bias,
+          key_levels, setups, no_trade_zone, contingency, invalidation,
+          bull_arguments, bear_arguments, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        day.id,
+        outlookData.bias,
+        outlookData.bias_reasoning || null,
+        outlookData.htf_bias || null,
+        outlookData.key_levels ? JSON.stringify(outlookData.key_levels) : null,
+        outlookData.setups ? JSON.stringify(outlookData.setups) : null,
+        outlookData.no_trade_zone ? JSON.stringify(outlookData.no_trade_zone) : null,
+        outlookData.contingency ? JSON.stringify(outlookData.contingency) : null,
+        outlookData.invalidation ? JSON.stringify(outlookData.invalidation) : null,
+        outlookData.bull_arguments ? JSON.stringify(outlookData.bull_arguments) : null,
+        outlookData.bear_arguments ? JSON.stringify(outlookData.bear_arguments) : null,
+        now,
+        now
+      );
+    }
+
+    // Fetch updated day with outlook
     day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
 
     logger.info(`Daily outlook saved for ${date}`);
@@ -279,7 +386,7 @@ router.post('/trading-days/:date/outlook', (req, res) => {
       success: true,
       data: {
         ...day,
-        outlook_data: JSON.parse(day.outlook_data)
+        outlook_data: getOutlookForDay(db, day.id)
       },
       message: `Daily outlook saved for ${date}`
     });
@@ -295,7 +402,7 @@ router.post('/trading-days/:date/outlook', (req, res) => {
 
 /**
  * POST /api/trading-days/:date/review
- * Save daily review for a specific date
+ * Save daily review for a specific date (writes to daily_reviews table)
  */
 router.post('/trading-days/:date/review', (req, res) => {
   try {
@@ -311,29 +418,79 @@ router.post('/trading-days/:date/review', (req, res) => {
       });
     }
 
-    // Check if day exists
-    let day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
-    const reviewJson = JSON.stringify(reviewData);
     const now = new Date().toISOString();
 
-    if (day) {
-      // Update existing day
+    // Ensure trading_day exists
+    let day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
+    if (!day) {
       db.prepare(`
-        UPDATE trading_days SET
-          has_review = 1,
-          review_data = ?,
-          updated_at = ?
-        WHERE date = ?
-      `).run(reviewJson, now, date);
+        INSERT INTO trading_days (date, has_review, created_at, updated_at)
+        VALUES (?, 1, ?, ?)
+      `).run(date, now, now);
+      day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
     } else {
-      // Create new day
       db.prepare(`
-        INSERT INTO trading_days (date, has_review, review_data, created_at, updated_at)
-        VALUES (?, 1, ?, ?, ?)
-      `).run(date, reviewJson, now, now);
+        UPDATE trading_days SET has_review = 1, updated_at = ? WHERE date = ?
+      `).run(now, date);
     }
 
-    // Fetch updated day
+    // Check if review already exists for this day
+    const existingReview = db.prepare(`
+      SELECT id FROM daily_reviews WHERE trading_day_id = ?
+    `).get(day.id);
+
+    if (existingReview) {
+      // Update existing review
+      db.prepare(`
+        UPDATE daily_reviews SET
+          outlook_grade = ?, execution_grade = ?, emotional_grade = ?,
+          bias_correct = ?, reflection = ?,
+          lessons = ?, hindsight = ?, action_items = ?,
+          trades_won = ?, trades_lost = ?, total_pnl = ?,
+          updated_at = ?
+        WHERE trading_day_id = ?
+      `).run(
+        reviewData.outlook_grade || reviewData.prediction_grade || null,
+        reviewData.execution_grade || null,
+        reviewData.emotional_grade || null,
+        reviewData.bias_correct !== undefined ? (reviewData.bias_correct ? 1 : 0) : null,
+        reviewData.reflection || null,
+        reviewData.lessons ? JSON.stringify(reviewData.lessons) : null,
+        reviewData.hindsight ? JSON.stringify(reviewData.hindsight) : null,
+        reviewData.action_items ? JSON.stringify(reviewData.action_items) : null,
+        reviewData.trades_won || 0,
+        reviewData.trades_lost || 0,
+        reviewData.total_pnl || null,
+        now,
+        day.id
+      );
+    } else {
+      // Insert new review
+      db.prepare(`
+        INSERT INTO daily_reviews (
+          trading_day_id, outlook_grade, execution_grade, emotional_grade,
+          bias_correct, reflection, lessons, hindsight, action_items,
+          trades_won, trades_lost, total_pnl, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        day.id,
+        reviewData.outlook_grade || reviewData.prediction_grade || null,
+        reviewData.execution_grade || null,
+        reviewData.emotional_grade || null,
+        reviewData.bias_correct !== undefined ? (reviewData.bias_correct ? 1 : 0) : null,
+        reviewData.reflection || null,
+        reviewData.lessons ? JSON.stringify(reviewData.lessons) : null,
+        reviewData.hindsight ? JSON.stringify(reviewData.hindsight) : null,
+        reviewData.action_items ? JSON.stringify(reviewData.action_items) : null,
+        reviewData.trades_won || 0,
+        reviewData.trades_lost || 0,
+        reviewData.total_pnl || null,
+        now,
+        now
+      );
+    }
+
+    // Fetch updated day with review
     day = db.prepare('SELECT * FROM trading_days WHERE date = ?').get(date);
 
     logger.info(`Daily review saved for ${date}`);
@@ -341,8 +498,8 @@ router.post('/trading-days/:date/review', (req, res) => {
       success: true,
       data: {
         ...day,
-        outlook_data: day.outlook_data ? JSON.parse(day.outlook_data) : null,
-        review_data: JSON.parse(day.review_data)
+        outlook_data: getOutlookForDay(db, day.id),
+        review_data: getReviewForDay(db, day.id)
       },
       message: `Daily review saved for ${date}`
     });
@@ -428,6 +585,9 @@ router.delete('/trading-days/:date', (req, res) => {
       });
     }
 
+    // Delete related records from new tables first
+    db.prepare('DELETE FROM daily_outlooks WHERE trading_day_id = ?').run(day.id);
+    db.prepare('DELETE FROM daily_reviews WHERE trading_day_id = ?').run(day.id);
     db.prepare('DELETE FROM trading_days WHERE date = ?').run(date);
 
     logger.info(`Deleted trading day for ${date}`);
