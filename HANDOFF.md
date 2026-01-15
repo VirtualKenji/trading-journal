@@ -14,7 +14,7 @@ https://github.com/VirtualKenji/trading-journal.git
 - **Backend**: Express.js + SQLite (port 3001)
 - **Intent Parsing**: Hybrid (LLM with keyword fallback)
 
-## Current State (as of commit 1d8a248)
+## Current State (as of commit 7f8119b)
 
 ### What's Working
 
@@ -22,27 +22,40 @@ https://github.com/VirtualKenji/trading-journal.git
 2. **Color-coded UX** - Long (emerald), Short (rose), Locations (cyan), Triggers (violet), Wins (gold), Losses (red), Lessons (orange)
 3. **Full trade editing** - all fields editable via PUT endpoint including pnl, outcome, status
 4. **New trade fields**: `entry_trigger`, `emotional_trigger`, `is_test`, `notes`
-5. **Daily Outlook + Daily Review** system working
+5. **Daily Outlook + Daily Review** system with SEPARATE TABLES
 6. **Commands that work**:
    - "open trades", "trade history", "stats"
    - "outlook", "show lessons"
    - "open BTC long at 97500", "close T1"
    - "lesson: [insight]"
 
+### Recent Changes (2026-01-16 Session)
+
+**Separated outlooks from reviews into distinct tables:**
+
+- `daily_outlooks` table - stores predictive pre-market data (bias, key levels, setups)
+- `daily_reviews` table - stores reflective post-market grades (outlook/execution/emotional grades, lessons)
+- Migration auto-runs on server start - moves existing JSON blob data to new tables
+- API response structure unchanged - frontend works without modification
+
 ### Key Files
 
-- `backend/src/routes/trades.js` - Trade CRUD with full field editing
-- `backend/src/routes/trading-days.js` - Outlook and Review endpoints
+- `backend/src/db/schema.sql` - Database schema with 13 tables including new daily_outlooks/daily_reviews
+- `backend/src/db/database.js` - Migration logic for outlook/review separation
+- `backend/src/routes/trading-days.js` - Updated routes using new tables
 - `frontend/src/services/formatters.js` - Markdown output with color spans
-- `frontend/src/styles/message.css` - Color classes (.text-long, .text-short, etc.)
 
-### Database Schema Updates
+### Database Schema
 
-New columns added to `trades` table:
-- `entry_trigger TEXT` - market/technical trigger for entry
-- `emotional_trigger TEXT` - emotional state during trade
-- `is_test BOOLEAN DEFAULT 0` - differentiate test vs real trades
-- `notes TEXT` - general notes field
+**13 tables total:**
+- `trading_days` - Parent table for each trading day
+- `daily_outlooks` - Predictive data (FK to trading_days)
+- `daily_reviews` - Reflective grades (FK to trading_days)
+- `trades` - Individual trade records
+- `trade_updates` - Updates during open trades
+- `chat_sessions`, `journal_entries`, `screenshots`
+- `lessons`, `lesson_categories`, `lesson_applications`
+- `system_config`, `sqlite_sequence`
 
 ### To Start Development
 
@@ -137,10 +150,23 @@ Always expand/recognize these:
 
 - **2 trades** logged (2026-01-15-T1, T2) - both losses, total -$77
 - **1 lesson** saved (range bottom precision)
-- **1 daily outlook** with review completed
+- **1 daily outlook** (2026-01-15) migrated to daily_outlooks table
+- **2 daily reviews** (2026-01-15, 2026-01-16) migrated to daily_reviews table
+- **Today's review grades**: Outlook 8/10, Execution 3/10, Emotional 7/10
 
 ## Known Issues
 
 - Stats endpoint doesn't exist (calculate from trades)
 - PnL auto-calculation from prices doesn't match user's stated PnL (use user's stated value)
 - Setup direction parsing only works if name contains "long" or "short"
+
+## API Quick Reference
+
+```
+GET  /api/trading-days/:date     - Get day with outlook + review from new tables
+POST /api/trading-days/:date/outlook - Save to daily_outlooks table
+POST /api/trading-days/:date/review  - Save to daily_reviews table
+GET  /api/trades?status=open     - List trades
+POST /api/trades                 - Create trade
+PUT  /api/trades/:id             - Update trade (all fields)
+```
