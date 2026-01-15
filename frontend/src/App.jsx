@@ -1,7 +1,7 @@
-import Home from './pages/Home';
+import ChatApp from './components/ChatApp';
 
 function App() {
-  return <Home />;
+  return <ChatApp />;
 }
 
 export default App;
