@@ -1,9 +1,70 @@
 const express = require('express');
 const { getDatabase } = require('../db/database');
 const { generateTradeNumber, getTodayDate } = require('../services/tradeNumbering');
+const { detectSession } = require('../services/sessionDetection');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+/**
+ * Get lessons relevant to a trade's context
+ * @param {Object} trade - Trade object with setup, session, trigger, location, initial_emotion
+ * @returns {Array} Relevant lessons with scores
+ */
+function getRelevantLessonsForTrade(trade) {
+  const db = getDatabase();
+
+  // Get active lessons with conditions
+  const lessons = db.prepare(`
+    SELECT l.*, lc.name as category_name
+    FROM lessons l
+    LEFT JOIN lesson_categories lc ON l.category_id = lc.id
+    WHERE l.status = 'active' AND l.conditions IS NOT NULL
+  `).all();
+
+  // Score each lesson by how well it matches the trade
+  const scoredLessons = lessons.map(lesson => {
+    const conditions = JSON.parse(lesson.conditions);
+    let score = 0;
+    let matches = [];
+
+    if (trade.setup && conditions.setup?.includes(trade.setup)) {
+      score += 3;
+      matches.push('setup');
+    }
+    if (trade.session && conditions.session?.includes(trade.session)) {
+      score += 2;
+      matches.push('session');
+    }
+    if (trade.trigger && conditions.trigger?.includes(trade.trigger)) {
+      score += 3;
+      matches.push('trigger');
+    }
+    if (trade.initial_emotion && conditions.emotion?.includes(trade.initial_emotion)) {
+      score += 2;
+      matches.push('emotion');
+    }
+    if (trade.location && conditions.location?.includes(trade.location)) {
+      score += 2;
+      matches.push('location');
+    }
+
+    return {
+      id: lesson.id,
+      title: lesson.title,
+      content: lesson.content,
+      category_name: lesson.category_name,
+      relevance_score: score,
+      matched_on: matches
+    };
+  });
+
+  // Filter to only matching lessons, sort by score, return top 3
+  return scoredLessons
+    .filter(l => l.relevance_score > 0)
+    .sort((a, b) => b.relevance_score - a.relevance_score)
+    .slice(0, 3);
+}
 
 /**
  * POST /api/trades
@@ -17,6 +78,7 @@ router.post('/trades', (req, res) => {
       direction,
       entry_price,
       position_size,
+      collateral,
       leverage,
       liquidation_price,
       setup,
@@ -41,10 +103,11 @@ router.post('/trades', (req, res) => {
       });
     }
 
-    // Generate trade number
+    // Generate trade number and detect session
     const today = getTodayDate();
     const trade_number = generateTradeNumber(today);
     const opened_at = new Date().toISOString();
+    const session = detectSession(opened_at);
 
     // Get or create trading day
     let tradingDay = db.prepare('SELECT id FROM trading_days WHERE date = ?').get(today);
@@ -57,9 +120,9 @@ router.post('/trades', (req, res) => {
     const stmt = db.prepare(`
       INSERT INTO trades (
         trade_number, trading_day_id, asset, direction, entry_price,
-        position_size, leverage, liquidation_price, setup, location,
-        trigger, initial_emotion, planned_in_outlook, status, opened_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+        position_size, collateral, leverage, liquidation_price, setup, location,
+        trigger, session, initial_emotion, planned_in_outlook, status, opened_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
     `);
 
     const result = stmt.run(
@@ -69,11 +132,13 @@ router.post('/trades', (req, res) => {
       direction.toLowerCase(),
       entry_price || null,
       position_size || null,
+      collateral || null,
       leverage || null,
       liquidation_price || null,
       setup || null,
       location || null,
       trigger || null,
+      session,
       initial_emotion || null,
       planned_in_outlook ? 1 : 0,
       opened_at
@@ -82,10 +147,14 @@ router.post('/trades', (req, res) => {
     // Fetch the created trade
     const trade = db.prepare('SELECT * FROM trades WHERE id = ?').get(result.lastInsertRowid);
 
+    // Get relevant lessons for this trade context
+    const relevantLessons = getRelevantLessonsForTrade(trade);
+
     logger.info(`Trade created: ${trade_number}`);
     res.status(201).json({
       success: true,
       data: trade,
+      relevant_lessons: relevantLessons,
       message: `Trade ${trade_number} created successfully`
     });
   } catch (error) {
@@ -101,7 +170,7 @@ router.post('/trades', (req, res) => {
 /**
  * GET /api/trades
  * List trades with optional filters
- * Query params: status, setup, location, outcome, from, to, limit, offset
+ * Query params: status, setup, location, session, outcome, from, to, limit, offset
  */
 router.get('/trades', (req, res) => {
   try {
@@ -110,6 +179,7 @@ router.get('/trades', (req, res) => {
       status,
       setup,
       location,
+      session,
       outcome,
       direction,
       asset,
@@ -133,6 +203,10 @@ router.get('/trades', (req, res) => {
     if (location) {
       whereClause += ' AND location = ?';
       params.push(location);
+    }
+    if (session) {
+      whereClause += ' AND session = ?';
+      params.push(session);
     }
     if (outcome) {
       whereClause += ' AND outcome = ?';
@@ -292,7 +366,7 @@ router.put('/trades/:id', (req, res) => {
     // Build update query dynamically
     const allowedFields = [
       'asset', 'direction', 'entry_price', 'exit_price', 'position_size',
-      'leverage', 'liquidation_price', 'setup', 'location', 'trigger',
+      'collateral', 'leverage', 'liquidation_price', 'setup', 'location', 'trigger',
       'initial_emotion', 'planned_in_outlook'
     ];
 
@@ -381,21 +455,34 @@ router.post('/trades/:id/close', (req, res) => {
     // Calculate PnL
     let pnl = null;
     let pnl_percentage = null;
+    let roi = null;
     let outcome = 'breakeven';
 
-    if (trade.entry_price && trade.position_size) {
+    if (trade.entry_price) {
       const priceChange = exit_price - trade.entry_price;
       const direction_multiplier = trade.direction === 'long' ? 1 : -1;
-
-      // PnL calculation considering leverage
       const leverage = trade.leverage || 1;
-      pnl_percentage = (priceChange / trade.entry_price) * 100 * direction_multiplier * leverage;
-      pnl = (trade.position_size * pnl_percentage) / 100;
 
-      if (pnl > 0) {
-        outcome = 'win';
-      } else if (pnl < 0) {
-        outcome = 'loss';
+      // Price change percentage (leveraged)
+      pnl_percentage = (priceChange / trade.entry_price) * 100 * direction_multiplier * leverage;
+
+      // Absolute PnL (if position_size or collateral available)
+      if (trade.collateral) {
+        // PnL based on collateral: collateral * (price_change% * leverage)
+        pnl = trade.collateral * (pnl_percentage / 100);
+        // ROI = PnL / collateral * 100 (same as pnl_percentage when using collateral)
+        roi = (pnl / trade.collateral) * 100;
+      } else if (trade.position_size) {
+        // Fallback: PnL based on notional position size
+        pnl = (trade.position_size * pnl_percentage) / 100;
+      }
+
+      if (pnl !== null) {
+        if (pnl > 0) {
+          outcome = 'win';
+        } else if (pnl < 0) {
+          outcome = 'loss';
+        }
       }
     }
 
@@ -407,12 +494,13 @@ router.post('/trades/:id/close', (req, res) => {
         exit_price = ?,
         pnl = ?,
         pnl_percentage = ?,
+        roi = ?,
         outcome = ?,
         status = 'closed',
         closed_at = ?,
         updated_at = ?
       WHERE id = ?
-    `).run(exit_price, pnl, pnl_percentage, outcome, closed_at, closed_at, trade.id);
+    `).run(exit_price, pnl, pnl_percentage, roi, outcome, closed_at, closed_at, trade.id);
 
     // Add exit emotion as an update if provided
     if (exit_emotion) {
@@ -425,11 +513,12 @@ router.post('/trades/:id/close', (req, res) => {
     // Fetch updated trade
     const closedTrade = db.prepare('SELECT * FROM trades WHERE id = ?').get(trade.id);
 
-    logger.info(`Trade closed: ${trade.trade_number} - ${outcome} - PnL: ${pnl?.toFixed(2)}`);
+    const roiStr = roi !== null ? ` | ROI: ${roi.toFixed(2)}%` : '';
+    logger.info(`Trade closed: ${trade.trade_number} - ${outcome} - PnL: ${pnl?.toFixed(2)}${roiStr}`);
     res.json({
       success: true,
       data: closedTrade,
-      message: `Trade ${trade.trade_number} closed. ${outcome.toUpperCase()} - PnL: $${pnl?.toFixed(2)} (${pnl_percentage?.toFixed(2)}%)`
+      message: `Trade ${trade.trade_number} closed. ${outcome.toUpperCase()} - PnL: $${pnl?.toFixed(2)} (${pnl_percentage?.toFixed(2)}%)${roiStr}`
     });
   } catch (error) {
     logger.error('Error closing trade:', error);

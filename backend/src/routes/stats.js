@@ -126,6 +126,30 @@ router.get('/stats/by-direction', (req, res) => {
 });
 
 /**
+ * GET /api/stats/by-session
+ * Get statistics grouped by trading session (Asia, London, Pre-NY, NY Open, NY Session, After Hours)
+ */
+router.get('/stats/by-session', (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const stats = statsService.getStatsByField('session', { from, to });
+
+    res.json({
+      success: true,
+      data: stats,
+      filters: { from, to }
+    });
+  } catch (error) {
+    logger.error('Error fetching stats by session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch statistics',
+      message: error.message
+    });
+  }
+});
+
+/**
  * GET /api/stats/setup/:name
  * Get detailed statistics for a specific setup
  */

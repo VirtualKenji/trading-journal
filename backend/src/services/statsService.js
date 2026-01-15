@@ -130,7 +130,7 @@ function getStatsByField(groupBy, filters = {}) {
   }
 
   // Validate groupBy field
-  const allowedFields = ['setup', 'location', 'trigger', 'direction', 'asset'];
+  const allowedFields = ['setup', 'location', 'trigger', 'direction', 'asset', 'session'];
   if (!allowedFields.includes(groupBy)) {
     throw new Error(`Invalid groupBy field: ${groupBy}`);
   }

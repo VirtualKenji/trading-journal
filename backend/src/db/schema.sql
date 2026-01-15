@@ -21,15 +21,18 @@ CREATE TABLE IF NOT EXISTS trades (
   entry_price REAL,
   exit_price REAL,
   position_size REAL,
+  collateral REAL,
   leverage REAL,
   liquidation_price REAL,
 
   setup TEXT,
   location TEXT,
   trigger TEXT,
+  session TEXT,
 
   pnl REAL,
   pnl_percentage REAL,
+  roi REAL,
   outcome TEXT,
 
   initial_emotion TEXT,
@@ -98,9 +101,59 @@ CREATE TABLE IF NOT EXISTS system_config (
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table 8: lesson_categories (hierarchical)
+CREATE TABLE IF NOT EXISTS lesson_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT,
+  parent_id INTEGER,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (parent_id) REFERENCES lesson_categories(id)
+);
+
+-- Table 9: lessons
+CREATE TABLE IF NOT EXISTS lessons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  conditions TEXT,  -- JSON: {setup:[], session:[], trigger:[], emotion:[], location:[]}
+  learned_at TEXT NOT NULL,
+  stats_before TEXT,  -- JSON snapshot at lesson creation
+  stats_after TEXT,   -- JSON snapshot updated periodically
+  status TEXT DEFAULT 'active',  -- draft|active|validated|invalidated|archived
+  validation_note TEXT,
+  trade_count_before INTEGER DEFAULT 0,
+  trade_count_after INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (category_id) REFERENCES lesson_categories(id)
+);
+
+-- Table 10: lesson_applications (track if lesson was applied to a trade)
+CREATE TABLE IF NOT EXISTS lesson_applications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lesson_id INTEGER NOT NULL,
+  trade_id INTEGER NOT NULL,
+  applied BOOLEAN,  -- did trader follow the lesson?
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (lesson_id) REFERENCES lessons(id),
+  FOREIGN KEY (trade_id) REFERENCES trades(id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE INDEX IF NOT EXISTS idx_trades_trading_day ON trades(trading_day_id);
 CREATE INDEX IF NOT EXISTS idx_trades_date ON trades(opened_at);
 CREATE INDEX IF NOT EXISTS idx_trading_days_date ON trading_days(date);
 CREATE INDEX IF NOT EXISTS idx_screenshots_entity ON screenshots(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_trades_session ON trades(session);
+CREATE INDEX IF NOT EXISTS idx_lessons_category ON lessons(category_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
+CREATE INDEX IF NOT EXISTS idx_lesson_applications_lesson ON lesson_applications(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_applications_trade ON lesson_applications(trade_id);
