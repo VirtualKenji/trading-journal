@@ -25,6 +25,9 @@ const INTENTS = {
   SHOW_SETUPS: 'show_setups',
   ADD_SETUP: 'add_setup',
 
+  // Daily outlook
+  SHOW_OUTLOOK: 'show_outlook',
+
   // Fallback
   LLM_QUERY: 'llm_query',
   UNKNOWN: 'unknown'
@@ -294,6 +297,22 @@ const PATTERNS = [
       /\b(show|list|get|display)\s+(?:my\s+)?setups?\b/i,
       /\bwhat\s+setups?\b/i,
       /\bavailable\s+setups?\b/i,
+    ],
+    extract: () => ({}),
+    validate: () => true,
+  },
+
+  // Show daily outlook
+  {
+    intent: INTENTS.SHOW_OUTLOOK,
+    patterns: [
+      /\b(?:show|get|what(?:'s| is)?)\s+(?:my\s+)?(?:daily\s+)?outlook\b/i,
+      /\b(?:daily\s+)?outlook\s+(?:for\s+)?today\b/i,
+      /\btoday(?:'s)?\s+(?:trading\s+)?(?:plan|outlook|bias)\b/i,
+      /\bwhat(?:'s| is| are)\s+(?:the\s+)?(?:plan|bias|levels?)\s+(?:for\s+)?today\b/i,
+      /\bkey\s+levels?\b/i,
+      /\bplanned\s+setups?\b/i,
+      /\bwhat\s+(?:am i|should i)\s+(?:looking|trading)\s+(?:for\s+)?today\b/i,
     ],
     extract: () => ({}),
     validate: () => true,

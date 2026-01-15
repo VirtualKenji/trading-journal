@@ -217,6 +217,14 @@ async function handleShowSetups() {
 }
 
 /**
+ * Handle SHOW_OUTLOOK intent
+ */
+async function handleShowOutlook() {
+  const result = await api('/trading-days/today');
+  return fmt.formatOutlook(result.data);
+}
+
+/**
  * Handle ANALYZE_SCREENSHOT intent
  */
 async function handleAnalyzeScreenshot(imageFile) {
@@ -265,6 +273,9 @@ function handleUnknown() {
     `- "close T1 at 98000"\n` +
     `- "show my open trades"\n` +
     `- "show trade history"\n\n` +
+    `**Daily:**\n` +
+    `- "what's my outlook for today?"\n` +
+    `- "show key levels"\n\n` +
     `**Stats:**\n` +
     `- "what's my win rate?"\n` +
     `- "show my stats"\n\n` +
@@ -316,6 +327,9 @@ export async function processMessage(text, imageFile = null) {
 
       case INTENTS.SHOW_SETUPS:
         return await handleShowSetups();
+
+      case INTENTS.SHOW_OUTLOOK:
+        return await handleShowOutlook();
 
       case INTENTS.ANALYZE_SCREENSHOT:
         return await handleAnalyzeScreenshot(imageFile);

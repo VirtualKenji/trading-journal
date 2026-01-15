@@ -223,6 +223,98 @@ export function formatSetups(setups) {
 }
 
 /**
+ * Expand common trading abbreviations
+ */
+function expandAbbreviations(text) {
+  if (!text) return text;
+  return text
+    .replace(/\bMR\b/g, 'Mean Reversion')
+    .replace(/\bOI\b/g, 'Open Interest')
+    .replace(/\bPA\b/g, 'Price Action')
+    .replace(/\bHTF\b/g, 'Higher Timeframe')
+    .replace(/\bLTF\b/g, 'Lower Timeframe')
+    .replace(/\bSFP\b/g, 'Swing Failure Pattern');
+}
+
+/**
+ * Format daily outlook as markdown
+ */
+export function formatOutlook(data) {
+  if (!data || !data.outlook_data) {
+    return "No daily outlook set for today. Create one with your bias and key levels!";
+  }
+
+  const outlook = data.outlook_data;
+  const date = data.date;
+
+  let md = `## Daily Outlook (${date})\n\n`;
+
+  // Bias
+  const biasEmoji = outlook.bias === 'bullish' ? '🟢' : outlook.bias === 'bearish' ? '🔴' : '⚪';
+  md += `**Bias:** ${biasEmoji} ${outlook.bias?.toUpperCase() || 'Not set'}`;
+  if (outlook.htf_bias) {
+    md += ` (HTF: ${outlook.htf_bias})`;
+  }
+  md += '\n';
+
+  if (outlook.bias_reasoning) {
+    md += `> ${outlook.bias_reasoning}\n`;
+  }
+  md += '\n';
+
+  // Key levels
+  if (outlook.key_levels && Object.keys(outlook.key_levels).length > 0) {
+    md += `### Key Levels\n`;
+    md += `| Level | Price |\n|-------|-------|\n`;
+    for (const [name, price] of Object.entries(outlook.key_levels)) {
+      const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      md += `| ${displayName} | ${formatCurrency(price)} |\n`;
+    }
+    md += '\n';
+  }
+
+  // Planned setups
+  if (outlook.setups && outlook.setups.length > 0) {
+    md += `### Planned Setups\n`;
+    outlook.setups.forEach((setup, i) => {
+      const setupName = expandAbbreviations(setup.name);
+      md += `${i + 1}. **${setupName}**`;
+      if (setup.location) md += ` @ ${setup.location}`;
+      if (setup.price) md += ` (${formatCurrency(setup.price)})`;
+      if (setup.price_range) md += ` (${setup.price_range})`;
+      md += '\n';
+      if (setup.pa_trigger) md += `   - PA: ${expandAbbreviations(setup.pa_trigger)}\n`;
+      if (setup.flow_trigger) md += `   - Flow: ${expandAbbreviations(setup.flow_trigger)}\n`;
+      if (setup.size) md += `   - Size: ${setup.size}\n`;
+    });
+    md += '\n';
+  }
+
+  // No trade zone
+  if (outlook.no_trade_zone) {
+    md += `### No Trade Zone\n`;
+    md += `**${outlook.no_trade_zone.level}**`;
+    if (outlook.no_trade_zone.price) md += ` @ ${formatCurrency(outlook.no_trade_zone.price)}`;
+    if (outlook.no_trade_zone.reason) md += ` - ${outlook.no_trade_zone.reason}`;
+    md += '\n\n';
+  }
+
+  // Invalidation levels
+  if (outlook.invalidation) {
+    md += `### Invalidation\n`;
+    if (outlook.invalidation.range_to_bearish) {
+      md += `- Bearish below: ${formatCurrency(outlook.invalidation.range_to_bearish)}\n`;
+    }
+    if (outlook.invalidation.range_to_bullish) {
+      md += `- Bullish above: ${formatCurrency(outlook.invalidation.range_to_bullish)}\n`;
+    }
+    md += '\n';
+  }
+
+  return md.trim();
+}
+
+/**
  * Format trade confirmation message
  */
 export function formatTradeConfirmation(trade, action = 'opened') {
